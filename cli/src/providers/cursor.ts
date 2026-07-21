@@ -95,10 +95,6 @@ export class CursorProvider implements SessionProvider {
 // ---------------------------------------------------------------------------
 // Helper functions
 // ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// WSL helpers
-// ---------------------------------------------------------------------------
 /**
  * WSL_DISTRO_NAME is injected by both WSL 1 and WSL 2 into every process 
  * running inside WSL, and is absent on native Linux.
