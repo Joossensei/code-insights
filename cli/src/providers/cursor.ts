@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import Database from 'better-sqlite3';
+import { execFileSync } from 'child_process';
 import type { SessionProvider } from './types.js';
 import type { ParsedSession, ParsedMessage, ToolCall } from '../types.js';
 import { generateTitle, detectSessionCharacter } from '../parser/titles.js';
@@ -95,18 +96,55 @@ export class CursorProvider implements SessionProvider {
 // Helper functions
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// WSL helpers
+// ---------------------------------------------------------------------------
+/**
+ * WSL_DISTRO_NAME is injected by both WSL 1 and WSL 2 into every process 
+ * running inside WSL, and is absent on native Linux.
+ */
+function isWsl(): boolean {
+  return !!process.env.WSL_DISTRO_NAME;
+}
+
+/**
+ * Cursor runs on the Windows host, not inside WSL, so its data lives in the
+ * Windows user profile. We resolve that profile dynamically instead of
+ * hardcoding /mnt/c, so custom WSL mount configurations are respected.
+ */
+function resolveWslWindowsUserProfile(): string | null {
+  try {
+    const winPath = execFileSync('cmd.exe', ['/c', 'echo %USERPROFILE%'], { encoding: 'utf8' }).trim();
+    return execFileSync('wslpath', [winPath], { encoding: 'utf8' }).trim();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Find Cursor's data directory based on the current platform.
  */
 function getCursorDataDir(): string | null {
   const platform = process.platform;
   const home = os.homedir();
-
   let dataDir: string;
+
   if (platform === 'darwin') {
     dataDir = path.join(home, 'Library', 'Application Support', 'Cursor', 'User');
   } else if (platform === 'linux') {
-    dataDir = path.join(home, '.config', 'Cursor', 'User');
+    if (isWsl()) {
+      const winProfile = resolveWslWindowsUserProfile();
+      if (winProfile) {
+        dataDir = path.join(winProfile, 'AppData', 'Roaming', 'Cursor', 'User');
+      } else {
+        // Resolution failed (missing cmd.exe/wslpath, unusual WSL setup) —
+        // fall back to the native Linux path so discover() degrades to
+        // "no sessions found" instead of throwing.
+        dataDir = path.join(home, '.config', 'Cursor', 'User');
+      }
+    } else {
+      dataDir = path.join(home, '.config', 'Cursor', 'User');
+    }
   } else if (platform === 'win32') {
     dataDir = path.join(process.env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'Cursor', 'User');
   } else {
